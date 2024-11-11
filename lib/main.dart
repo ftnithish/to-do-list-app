@@ -1,30 +1,71 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:intl/intl.dart';
+import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+part 'main.g.dart';
+part 'task.g.dart';
 
-void main() => runApp(MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  runApp(const MyApp());
+}
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return const MaterialApp(
       debugShowCheckedModeBanner: false,
       home: ToDoListScreen(),
     );
   }
 }
 
-class ToDoItem {
-  String task;
-  String category;
-  bool isCompleted;
-  bool isFavourite;
-  String priority;
-  String status;
-  DateTime createdTime;
+@HiveType(typeId: 0)
+class Task extends HiveObject {
+  @HiveField(0)
+  final String title;
+  @HiveField(1)
+  final DateTime createdAt;
 
+  Task({required this.title, required this.createdAt});
+
+  Map<String, dynamic> toMap() {
+    return {
+      'title': title,
+      'createdAt': createdAt.toIso8601String(),
+    };
+  }
+
+  factory Task.fromMap(Map<String, dynamic> map) {
+    return Task(
+      title: map['title'],
+      createdAt: DateTime.parse(map['createdAt']),
+    );
+  }
+}
+
+@HiveType(typeId: 1)
+class ToDoItem {
+  @HiveField(0)
+  String task;
+  @HiveField(1)
+  String category;
+  @HiveField(2)
+  bool isCompleted;
+  @HiveField(3)
+  bool isFavourite;
+  @HiveField(4)
+  String priority;
+  @HiveField(5)
+  String status;
+  @HiveField(6)
+  DateTime createdTime;
+  @HiveField(7)
   ToDoItem({
     required this.task,
     required this.category,
@@ -37,7 +78,7 @@ class ToDoItem {
 }
 
 class ToDoListScreen extends StatefulWidget {
-  const ToDoListScreen({Key? key}) : super(key: key);
+  const ToDoListScreen({super.key});
 
   @override
   State<ToDoListScreen> createState() => _ToDoListScreenState();
@@ -45,7 +86,31 @@ class ToDoListScreen extends StatefulWidget {
 
 class _ToDoListScreenState extends State<ToDoListScreen> {
   final List<ToDoItem> _toDoItems = [];
+  late Box<ToDoItem> _todoBox;
 
+  @override
+  void initState() {
+    super.initState();
+    _openBox();
+  }
+
+  Future<void> _openBox() async {
+    _todoBox = await Hive.openBox<ToDoItem>('todoBox');
+    final _toDoItems = _todoBox.values.toList();
+  }
+
+  Future<void> _addTask(ToDoItem task) async {
+    await _todoBox.add(task);
+    setState(() {}); // Refresh UI
+  }
+
+  Future<void> _deleteTask(int index) async {
+    await _todoBox.deleteAt(index);
+    setState(() {}); // Refresh UI
+  }
+
+  @override
+  @override
   int _selectedIndex = 0;
   String _selectedFilter = "all";
   final List<String> filters = [
@@ -53,7 +118,10 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
     "unfinished",
     "finished",
   ];
+  final TextEditingController _taskController = TextEditingController();
+  final TextEditingController _categoryController = TextEditingController();
 
+  @override
   void _addToDoItem(String task, String priority) {
     if (task.isNotEmpty) {
       setState(() {
@@ -66,16 +134,44 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _todoBox.close();
+    _taskController.dispose();
+    _categoryController.dispose();
+    super.dispose();
+  }
+
   String formatCreatedTime(DateTime createdTime) {
     final now = DateTime.now();
     final difference = now.difference(createdTime).inDays;
+    String formattedDate =
+        '${createdTime.day} ${_getMonthName(createdTime.month)}';
     if (difference == 0) {
-      return "today";
+      return "today,$formattedDate";
     } else if (difference == 1) {
       return "yesterday";
     } else {
-      return '${createdTime.day}/${createdTime.month}/${createdTime.year}';
+      return formattedDate;
     }
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
+    return months[month - 1];
   }
 
   void _showTaskDetails(ToDoItem item) {
@@ -89,7 +185,7 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
           title: Center(
             child: Text(
               item.task,
-              style: TextStyle(
+              style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 22,
                 color: Colors.teal,
@@ -102,18 +198,18 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
             children: [
               _buildDetailRow(Icons.flag, "Priority:", item.priority,
                   iconColor:
-                      item.priority == "High" ? Colors.red : Colors.grey),
-              Divider(),
+                      item.priority == "High" ? Colors.green : Colors.grey),
+              const Divider(),
               _buildDetailRow(Icons.calendar_today, "Added on:",
                   formatCreatedTime(item.createdTime)),
-              Divider(),
+              const Divider(),
               _buildDetailRow(
                 Icons.hourglass_top,
                 "Status:",
                 item.status,
                 iconColor: item.isCompleted ? Colors.green : Colors.orange,
               ),
-              Divider(),
+              const Divider(),
               _buildDetailRow(
                 Icons.task,
                 "Completion:",
@@ -125,7 +221,7 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
           actions: [
             Center(
               child: TextButton(
-                child: Text(
+                child: const Text(
                   "Close",
                   style: TextStyle(color: Colors.teal, fontSize: 16),
                 ),
@@ -145,16 +241,16 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
       child: Row(
         children: [
           Icon(icon, color: iconColor, size: 22),
-          SizedBox(width: 10),
+          const SizedBox(width: 10),
           Text(
             label,
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
-          SizedBox(width: 5),
+          const SizedBox(width: 5),
           Expanded(
             child: Text(
               value,
-              style: TextStyle(fontSize: 16, color: Colors.black87),
+              style: const TextStyle(fontSize: 16, color: Colors.black87),
             ),
           ),
         ],
@@ -218,8 +314,10 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
   }
 
   void _openCalendarScreen() {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (context) => _calendarScreen()));
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (context) => _calendarScreen(onTaskAdded: (task) {
+              _addToDoItem(task, 'general');
+            })));
   }
 
   void _promptAddToDoItem() {
@@ -228,22 +326,22 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text("New Task"),
+          title: const Text("New Task"),
           content: TextField(
             autofocus: true,
             controller: taskController,
-            decoration: InputDecoration(hintText: "Enter text here"),
+            decoration: const InputDecoration(hintText: "Enter text here"),
           ),
           actions: [
             TextButton(
-              child: Text('Cancel'),
+              child: const Text('Cancel'),
               onPressed: () {
                 taskController.clear();
                 Navigator.of(context).pop();
               },
             ),
             TextButton(
-                child: Text("done"),
+                child: const Text("done"),
                 onPressed: () {
                   if (taskController.text.isNotEmpty) {
                     _addToDoItem(taskController.text, _selectedFilter);
@@ -270,7 +368,7 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
   Widget _buildToDoItem(ToDoItem toDoItem, int index) {
     return Slidable(
       key: Key(toDoItem.task),
-      endActionPane: ActionPane(motion: ScrollMotion(), children: [
+      endActionPane: ActionPane(motion: const ScrollMotion(), children: [
         SlidableAction(
           onPressed: (context) {
             _toggleFavourite(index);
@@ -330,8 +428,8 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("To-Do List"),
-        titleTextStyle: TextStyle(
+        title: const Text("To-Do List"),
+        titleTextStyle: const TextStyle(
           fontWeight: FontWeight.bold,
           color: Colors.black,
         ),
@@ -339,7 +437,7 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
         centerTitle: true,
         toolbarHeight: 60.2,
         toolbarOpacity: 0.8,
-        shape: RoundedRectangleBorder(
+        shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.only(
             bottomLeft: Radius.circular(25),
             bottomRight: Radius.circular(25),
@@ -347,7 +445,7 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.add_task),
+            icon: const Icon(Icons.add_task),
             tooltip: "Add from template",
             onPressed: _openTaskTemplate,
           )
@@ -357,11 +455,11 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
         children: [
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
             child: Row(
               children: filters.map((filters) {
                 return Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
                   child: ChoiceChip(
                     label: Text(filters),
                     selected: _selectedFilter == filters,
@@ -386,20 +484,20 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onNavItemTap,
-        items: [
+        items: const [
           BottomNavigationBarItem(icon: Icon(Icons.task), label: "My Tasks"),
           BottomNavigationBarItem(
               icon: Icon(Icons.calendar_today), label: "Calendar"),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.settings), label: "Settings"),
+          // BottomNavigationBarItem(
+          //     icon: Icon(Icons.settings), label: "Settings"),
         ],
         selectedItemColor: Colors.grey,
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _promptAddToDoItem,
         tooltip: 'Add Task',
-        child: Icon(Icons.add),
         backgroundColor: Colors.teal,
+        child: const Icon(Icons.add),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
@@ -409,7 +507,7 @@ class _ToDoListScreenState extends State<ToDoListScreen> {
 class TaskTemplateScreen extends StatelessWidget {
   final Function(String, String) onTaskSelected;
 
-  TaskTemplateScreen({required this.onTaskSelected});
+  TaskTemplateScreen({super.key, required this.onTaskSelected});
 
   final List<Map<String, dynamic>> taskTemplates = [
     {
@@ -465,7 +563,7 @@ class TaskTemplateScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Task Templates")),
+      appBar: AppBar(title: const Text("Task Templates")),
       body: ListView.builder(
         itemCount: taskTemplates.length,
         itemBuilder: (context, index) {
@@ -476,15 +574,15 @@ class TaskTemplateScreen extends StatelessWidget {
                 leading: Icon(task['icon']),
                 title: Text(task['title']),
                 trailing: TextButton(
-                  child: Text(
-                    "Add",
-                  ),
                   style: ButtonStyle(
-                      iconColor: MaterialStateProperty.all(Colors.orange)),
+                      iconColor: WidgetStateProperty.all(Colors.orange)),
                   onPressed: () {
                     onTaskSelected(task['title'], 'general');
                     Navigator.of(context).pop();
                   },
+                  child: const Text(
+                    "Add",
+                  ),
                 ),
               ));
         },
@@ -494,7 +592,8 @@ class TaskTemplateScreen extends StatelessWidget {
 }
 
 class _calendarScreen extends StatefulWidget {
-  const _calendarScreen({super.key});
+  Function(String) onTaskAdded;
+  _calendarScreen({required this.onTaskAdded});
 
   @override
   State<_calendarScreen> createState() => __calendarScreenState();
@@ -503,17 +602,22 @@ class _calendarScreen extends StatefulWidget {
 class __calendarScreenState extends State<_calendarScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  Map<DateTime, List<String>> _task = {};
+  final Map<DateTime, List<String>> _task = {};
+  DateTime _normalizeDay(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
 
   void _addTaskForToday(String task) {
     if (task.isNotEmpty) {
       setState(() {
-        if (_task[_selectedDay!] != null) {
-          _task[_selectedDay!]!.add(task);
+        DateTime normalizedDay = _normalizeDay(_selectedDay!);
+        if (_task[normalizedDay] != null) {
+          _task[normalizedDay]!.add(task);
         } else {
-          _task[_selectedDay!] = [task];
+          _task[normalizedDay] = [task];
         }
       });
+      widget.onTaskAdded(task);
     }
   }
 
@@ -528,18 +632,18 @@ class __calendarScreenState extends State<_calendarScreen> {
               content: TextField(
                 autofocus: true,
                 controller: taskController,
-                decoration: InputDecoration(hintText: "enter text here"),
+                decoration: const InputDecoration(hintText: "Enter text here"),
               ),
               actions: [
                 TextButton(
-                  child: Text("cancel"),
+                  child: const Text("Cancel"),
                   onPressed: () {
                     taskController.clear();
                     Navigator.of(context).pop();
                   },
                 ),
                 TextButton(
-                  child: Text("done"),
+                  child: const Text("Done"),
                   onPressed: () {
                     if (taskController.text.isNotEmpty) {
                       _addTaskForToday(
@@ -554,9 +658,75 @@ class __calendarScreenState extends State<_calendarScreen> {
             );
           });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("please add new task"),
       ));
+    }
+  }
+
+  void _showTasksForSelectedDay() {
+    DateTime normalizedDay = _normalizeDay(_selectedDay!);
+    if (_task[normalizedDay] != null) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (BuildContext context) {
+          final tasksForSelectedDay = _task[normalizedDay]!;
+          return Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 10),
+                  child: Text(
+                    "Tasks on ${DateFormat('MMMM d, y').format(_selectedDay!)}",
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const Divider(),
+                ...tasksForSelectedDay.map((task) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: ListTile(
+                        leading: const Icon(Icons.task_alt, color: Colors.blue),
+                        title: Text(
+                          task,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Status: Pending',
+                          style: TextStyle(color: Colors.grey[700]),
+                        ),
+                        trailing: const Icon(Icons.star, color: Colors.amber),
+                        onTap: () {},
+                      ),
+                    )),
+                if (tasksForSelectedDay.isEmpty)
+                  const Center(
+                    child: Text(
+                      'No tasks for this day',
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("No tasks for the selected day"),
+        ),
+      );
     }
   }
 
@@ -564,49 +734,63 @@ class __calendarScreenState extends State<_calendarScreen> {
   Widget build(BuildContext) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Calendar"),
+        title: const Text(
+          "Calendar",
+        ),
         backgroundColor: Colors.grey,
         toolbarHeight: 60.2,
         toolbarOpacity: 0.8,
-        shape: RoundedRectangleBorder(
+        centerTitle: true,
+        shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.only(
             bottomLeft: Radius.circular(25),
             bottomRight: Radius.circular(25),
           ),
         ),
       ),
-      body: Column(
-        children: [
-          TableCalendar(
-            focusedDay: _focusedDay,
-            firstDay: DateTime.utc(2020, 1, 1),
-            lastDay: DateTime.utc(2030, 12, 31),
-            selectedDayPredicate: (day) {
-              return isSameDay(_selectedDay, day);
-            },
-            onDaySelected: (selectedDay, focusedDay) {
-              setState(() {
-                _focusedDay = focusedDay;
-                _selectedDay = selectedDay;
-              });
-            },
-            calendarStyle: CalendarStyle(
-                todayDecoration: BoxDecoration(
-                  color: Colors.teal,
-                  shape: BoxShape.circle,
-                ),
-                selectedDecoration:
-                    BoxDecoration(color: Colors.grey, shape: BoxShape.circle)),
+      body: Column(children: [
+        TableCalendar(
+          focusedDay: _focusedDay,
+          firstDay: DateTime.utc(2020, 1, 1),
+          lastDay: DateTime.utc(2030, 12, 31),
+          selectedDayPredicate: (day) {
+            return isSameDay(_selectedDay, day);
+          },
+          onDaySelected: (selectedDay, focusedDay) {
+            setState(() {
+              _focusedDay = focusedDay;
+              _selectedDay = selectedDay;
+            });
+            return _showTasksForSelectedDay();
+          },
+          eventLoader: (day) => _task[_normalizeDay(day)] ?? [],
+          calendarStyle: const CalendarStyle(
+            todayDecoration: BoxDecoration(
+              color: Colors.blueGrey,
+              shape: BoxShape.circle,
+            ),
+            selectedDecoration:
+                BoxDecoration(color: Colors.teal, shape: BoxShape.circle),
+            markerDecoration:
+                BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+            markersAlignment: Alignment.bottomCenter,
           ),
-          Expanded(
-            child: ListView(
-                children: _task[_selectedDay] != null
-                    ? _task[_selectedDay]!
-                        .map((task) => ListTile(title: Text(task)))
-                        .toList()
-                    : [Center(child: Text('No tasks for this day'))]),
-          ),
-        ],
+        ),
+        Expanded(
+          child: ListView(
+              children:
+                  _task[_normalizeDay(_selectedDay ?? _focusedDay)] != null
+                      ? _task[_normalizeDay(_selectedDay ?? _focusedDay)]!
+                          .map((task) => ListTile(title: Text(task)))
+                          .toList()
+                      : [const Center(child: Text('No tasks for this day'))]),
+        ),
+      ]),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _promptAddToTask,
+        tooltip: 'Add Task for Selected Day',
+        backgroundColor: Colors.teal,
+        child: const Icon(Icons.add),
       ),
     );
   }
